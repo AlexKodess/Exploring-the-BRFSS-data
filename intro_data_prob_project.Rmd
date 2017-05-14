@@ -1,0 +1,252 @@
+---
+title: "Exploring the BRFSS data"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+Alex Kodess
+amkodess@gmail.com
+
+http://www.cdc.gov/brfss/
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(tidyverse)
+library(scales)
+library(knitr)
+```
+
+### Load data
+```{r load-data}
+load("brfss2013.RData")
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+**Generalizability**: 
+The data appear to be collected from a fairly large group of people, in different locations 
+around the United States, via a variety of methods. Hence conclusions drawn from the data 
+are generalizable. 
+
+**Causality**: 
+However since the data are purely obsevational, all the conclusions are not causal. 
+Only correlational relationships could be investigated.
+
+
+* * *
+
+## Part 2: Research questions
+
+**Research quesion 1: **
+Investigate the classical question about whether 
+there exists a relationship between one's sleep times and 
+one's health status. To avoid a possible occurence of 
+Simpson's paradox, we divide observations by their gender.
+
+
+**Research quesion 2:**
+Investigate a possible relationship between one's 
+self-reported health status and one's education level. Split 
+the exploratory analysis by gender.
+
+**Research quesion 3:**
+How many people in New England cannot afford to see a doctor? 
+We again split our analysis by gender.
+
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+NOTE: Insert code chunks as needed by clicking on the "Insert a new code chunk" 
+button (green button with orange arrow) above. Make sure that your code is visible
+in the project you submit. Delete this note when before you submit your work.
+
+**Research quesion 1. Sleep and health: variables `genhtlh`, `sleptim1`, `sex`**
+
+The variables relevant to this question are 
+`genhlth`,
+```{r}
+str(brfss2013$genhlth); summary(brfss2013$genhlth)
+```
+`sleptim1`,
+```{r}
+str(brfss2013$sleptim1); summary(brfss2013$sleptim1)
+```
+and `sex`
+```{r}
+str(brfss2013$sex); summary(brfss2013$sex)
+```
+
+
+First we realize that there are missing data as well as data 
+that are obviously incorrect such as sleeping times exceeding 
+24 hours. We filter these out first.
+
+```{r}
+tb_1 <- brfss2013 %>% 
+        select(genhlth, sleptim1, sex) %>% 
+        filter(
+                !is.na(genhlth), 
+                !is.na(sleptim1), 
+                !is.na(sex),
+                sleptim1 <= 24
+                )
+```
+
+We now find a summary of sleeping patterns among different groups 
+of health status and different genders. The mean time is shown in minutes. 
+
+```{r}
+tb_1 %>% group_by(genhlth, sex) %>%
+        summarise(med_sleep = median(sleptim1),
+                  mean_sleep = round(60*mean(sleptim1))) %>%
+        ungroup() %>%
+        arrange(desc(mean_sleep)) 
+
+```
+
+These data are now visualized using side-by-side boxplots. The 
+data are faceted by gender.
+
+```{r}
+ggplot(
+        data = tb_1, 
+        mapping = aes(x = genhlth, y = sleptim1)
+        ) + 
+        geom_boxplot() +
+        scale_y_continuous(breaks = pretty_breaks(n = 24)) + 
+        labs(x = "Health Status", y = "Sleep Time, hr") + 
+        facet_wrap(~ sex)
+
+
+```
+
+
+**Research quesion 2. Education and health: variables  `genhlth`, `sex`, `educa`**
+
+The variables relevant to this question are 
+`genhlth`, `sex`, and `educa`
+```{r}
+str(brfss2013$educa); summary(brfss2013$educa)
+```
+
+We first obtan all the observations were all three variables 
+are available.
+
+
+```{r}
+tb_2 <- brfss2013 %>% 
+        select(genhlth, educa, sex) %>% 
+        filter(
+                !is.na(genhlth), 
+                !is.na(educa), 
+                !is.na(sex)
+                )
+```
+
+We shorten the names of the factor levels of `educa` for 
+aesthetic reasons.
+
+```{r}
+levels(tb_2$educa) <- c(
+                                "Only kindergarten",
+                                "Elementary",
+                                "Some High School",
+                                "High School graduate",
+                                "College dropped",
+                                "College graduate"
+)
+```
+This gives us a contingency table for `educa` and `genhlth` 
+(regardless of `sex`)
+```{r}
+cont_tab <- table(tb_2$educa, tb_2$genhlth)
+round(100*prop.table(cont_tab), 4)
+```
+
+These data are now visualized using bar plots. The 
+data are faceted by gender.
+
+```{r}
+ggplot(
+        data = tb_2, 
+        aes(x = educa, fill = genhlth)) + 
+        geom_bar(position = "fill") + 
+        labs(x = "Education Level", 
+             y = "Proportion by Health Status"
+        )+
+        scale_fill_discrete('Health Status') + 
+        coord_flip() + 
+        facet_wrap(~ sex)
+```
+
+
+
+**Research quesion 3: How many people cannot afford a doctor in New England? variables `X_state`, `sex`, `medcost`**
+
+We first of all realize that the variable `_state` is not present in the dataset, and 
+we should use `X_state`. 
+```{r}
+str(brfss2013$X_state); summary(brfss2013$X_state)
+```
+
+The other two variables involved in this question are `sex` 
+and `medcost`:
+```{r}
+str(brfss2013$medcost); summary(brfss2013$medcost)
+```
+
+We define `New_England` as the following six states in the Northest US.
+
+```{r}
+New_England <- c(
+                        "Connecticut",
+                        "Maine",
+                        "Massachusetts",
+                        "New Hampshire",
+                        "Rhode Island",
+                        "Vermont"
+)
+```
+We select the needed variables, group them by gender and state, and 
+compute in each group the proportion of people who answered positively 
+to the question *Was there a time in the past 12 months when 
+you needed to see a doctor but could not because of cost?*
+
+```{r}
+tb_3 <- brfss2013 %>% 
+        select(X_state, medcost, sex) %>% 
+        filter(
+                X_state %in% New_England,
+                !is.na(medcost),
+                !is.na(sex)
+        ) %>% 
+        group_by(sex, X_state) %>%
+        summarise(
+                perc = length(medcost[medcost == "Yes"]) / n()
+        )
+
+print(tb_3)
+```
+These data are now visualized using bar plots. The data are faceted by gender.
+```{r}
+tb_3$X_state = factor(tb_3$X_state)
+ggplot(
+        data = tb_3, 
+        aes(x = X_state, y = perc)) + 
+        geom_col() + 
+        labs(x = "State", y = "Percentage") + 
+        coord_flip() + 
+        facet_wrap(~ sex)
+```
